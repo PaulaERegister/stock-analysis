@@ -563,7 +563,7 @@ def main():
     Main function to calculate various trends, strategies, and plot results for stocks.
     """
     year = int(input("Starting year for statistical analysis: "))
-    input_stock = input("Choose a stock from the list:\nMSFT, GOOG, FB, TWTR, NFLX, AMZN, YHOO, GE, QCOM, IBM, HPQ, AAPL\n").upper()
+    input_stock = input("Choose a stock:\n(EX: AAPL or FB)\n").upper()
     plot = input("Type Y to plot " + input_stock + ". Press enter to skip.")
 
     start = datetime.datetime(year, 1, 1)
