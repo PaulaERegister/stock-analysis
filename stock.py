@@ -17,13 +17,14 @@ from mpl_finance import candlestick_ohlc
 
 api_key = "itSiso5s5gexytWVr4Aw"
 
-
-
-
-
-
-
 def moving_average_crossover_strategy(days, stk, start_date, end_date):
+    """
+    :param days: An array of the day ranges to calculate a moving average from
+    :param stk: The particular stock to examine
+    :param start_date: The starting date
+    :param end_date: The end date
+    :return: The stock
+    """
     ds = [d + "d" for d in days]
     start_range = ds[0]
     end_range = ds[1]
@@ -152,6 +153,22 @@ def rolling_average_n_day(days, date_start, date_end, stk):
         stk[str(d) + "d"] = np.round(stk["Adj. Close"].rolling(window=int(d), center=False).mean(), 2)
     #pandas_candlestick_ohlc(stk.loc[date_start:date_end, :], otherseries=[d + "d" for d in days], adj=True)
 
+def benchmarking(spyderdat, start, end, bk):
+    spyder = spyderdat.loc[start:end]
+    batch = 100
+    print(spyder.iloc[[0,-1],:])
+    batches = np.ceil(100 * spyder.loc[:, "Adj Close"].iloc[0])  # Maximum number of batches of stocks invested in
+    trade_val = batches * batch * spyder.loc[:,"Adj Close"].iloc[0] # How much money is used to buy SPY
+    final_val = batches * batch * spyder.loc[:,"Adj Close"].iloc[-1] + (1000000 - trade_val) # Final value of the portfolio
+    print(final_val)
+    ax_bench = (spyder["Adj Close"] / spyder.loc[:, "Adj Close"].iloc[0]).plot(label="SPY")
+    ax_bench = (bk["Portfolio Value"].groupby(level=0).apply(lambda x: x[-1]) / 1000000).plot(ax=ax_bench,                                                                         label="Portfolio")
+    ax_bench.legend(ax_bench.get_lines(), [l.get_label() for l in ax_bench.get_lines()], loc='best')
+    print(ax_bench)
+
+"""
+Following three functions taken from Source for educational purposes.
+"""
 
 def ma_crossover_orders(stocks, fast, slow):
     """
@@ -295,7 +312,6 @@ def pandas_candlestick_ohlc(dat, stick="day", adj=False, otherseries=None):
     plt.setp(plt.gca().get_xticklabels(), rotation=45, horizontalalignment='right')
 
     plt.show()
-
 def backtest(signals, cash, port_value=.1, batch=100):
     """
     :param signals: pandas DataFrame containing buy and sell signals with stock prices and symbols, like that returned by ma_crossover_orders
@@ -373,17 +389,22 @@ def backtest(signals, cash, port_value=.1, batch=100):
     return results
 
 def main():
-    start = datetime.datetime(2016, 1, 1)
+    year = int(input("Starting year for statistical analysis: "))
+    start = datetime.datetime(year, 1, 1)
     end = datetime.date.today()
     wiki = "WIKI/"
-    s = "AAPL"
-    # Get more stocks
+    input_stock = input("Choose a stock from the list:\nMSFT, GOOG, FB, TWTR, NFLX, AMZN, YHOO, GE, QCOM, IBM, HPQ, AAPL\n")
+    """
+    possible_stocks = ["MSFT", "GOOG", "FB", "TWTR", "NFLX", "AMZN", "YHOO", "GE", "QCOM", "IBM", "HPQ", "AAPL"]
     (microsoft, google, facebook, twitter, netflix,
-     amazon, yahoo, ge, qualcomm, ibm, hp) = (quandl.get("WIKI/" + s, start_date=start,
-                                                         end_date=end, authtoken=api_key) for s in ["MSFT", "GOOG", "FB", "TWTR",
-                                                                                 "NFLX", "AMZN", "YHOO", "GE",
-                                                                                 "QCOM", "IBM", "HPQ"])
-    apple = quandl.get(wiki + s, start_date=start, end_date=end)
+     amazon, yahoo, ge, qualcomm, ibm, hp, apple) = (quandl.get(wiki + s, start_date=start,
+                                                         end_date=end, authtoken=api_key) for s in possible_stocks)
+    stocks_dict = {"msft":microsoft, "goog":google, "fb":facebook, "twtr":twitter, "nflx":netflix, "amzn":amazon,
+                       "yhoo":yahoo, "ge":ge, "qcom":qualcomm, "ibm":ibm, "hpq":hp, "aapl":apple}
+    stock = stocks_dict[input_stock.lower()]
+    """
+    apple = quandl.get(wiki + input_stock.upper(), start_date=start,end_date=end, authtoken=api_key)
+    print(apple)
     type(apple)
     pd.DataFrame(apple).head()
     apple.head()
@@ -474,6 +495,7 @@ def main():
     apple = quandl.get("WIKI/AAPL", start_date=start, end_date=end, authtoken=api_key)
     rolling_average_n_day(["20", "50", "200"], '2016-01-04', '2016-12-31', apple)
     moving_average_crossover_strategy(["20", "50"], apple, '2016-01-04', '2016-12-31')
+    """
     signals = ma_crossover_orders([("AAPL", apple),
                                    ("MSFT", microsoft),
                                    ("GOOG", google),
@@ -487,22 +509,13 @@ def main():
                                    ("IBM", ibm),
                                    ("HPQ", hp)],
                                   fast=20, slow=50)
+
     #print(signals)
     bk = backtest(signals, 1000000)
     bk["Portfolio Value"].groupby(level=0).apply(lambda x: x[-1]).plot()
     benchmarking(spyderdat, start, end, bk)
+                                      """
     plt.show()
-def benchmarking(spyderdat, start, end, bk):
-    spyder = spyderdat.loc[start:end]
-    batch = 100
-    print(spyder.iloc[[0,-1],:])
-    batches = np.ceil(100 * spyder.loc[:, "Adj Close"].iloc[0])  # Maximum number of batches of stocks invested in
-    trade_val = batches * batch * spyder.loc[:,"Adj Close"].iloc[0] # How much money is used to buy SPY
-    final_val = batches * batch * spyder.loc[:,"Adj Close"].iloc[-1] + (1000000 - trade_val) # Final value of the portfolio
-    print(final_val)
-    ax_bench = (spyder["Adj Close"] / spyder.loc[:, "Adj Close"].iloc[0]).plot(label="SPY")
-    ax_bench = (bk["Portfolio Value"].groupby(level=0).apply(lambda x: x[-1]) / 1000000).plot(ax=ax_bench,                                                                         label="Portfolio")
-    ax_bench.legend(ax_bench.get_lines(), [l.get_label() for l in ax_bench.get_lines()], loc='best')
-    print(ax_bench)
+
 
 main()
