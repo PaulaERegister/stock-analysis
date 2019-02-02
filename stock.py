@@ -17,9 +17,152 @@ from mpl_finance import candlestick_ohlc
 
 api_key = "itSiso5s5gexytWVr4Aw"
 
+def rolling_average_n_day(days, date_start, date_end, stk, stock_name):
+    """
+    Calculate the rolling average over n days, where the average is calculated by
+    (1/n) summation from (i=0) to (n-1) of (x_t-i)
+    This moving average helps to identify trends from the noise.
+    If the 200 day moving average is trending downward, overall bearish.
+    If upward, bullish market.
+    :param days: An array of n elements to calculate an n-day moving average from
+    :param date_start: The date to start from
+    :param date_end: The end date
+    :param stk: The stock to calculate the average for
+    :return: None
+    """
+    for d in days:
+        stk[str(d) + "d"] = np.round(stk["Adj. Close"].rolling(window=int(d), center=False).mean(), 2)
+    pandas_candlestick_ohlc(stk.loc[date_start:date_end, :], stock_name, otherseries=[d + "d" for d in days], adj=True)
+
+def calculate_returns(stocks):
+    """
+    Calculate and plot the stock's return since the beginning of the period of interest, defined by
+    return_t,0 = price_t / price_0
+    Calculate the change of each stock per day, where the change is defined by
+    change_t = log(price_t) - log(price_(t-1))
+    :param stocks: The stocks to compare
+    :return: none
+    """
+    # stock_return = price_t / price_0
+    stock_return = stocks.apply(lambda x: x / x[0])
+    print(stock_return.head() - 1)
+    stock_return.plot(grid = True).axhline(y=1, color="black",lw=2)
+    plt.title("Return since Beginning of Period of Interest")
+
+    # plot the log difference of the growth of a stock
+    # change_t = log(price_t) - log(price_(t-1))
+    stock_change = stocks.apply(lambda x: np.log(x) - np.log(x.shift(1)))
+    print(stock_change.head())
+    stock_change.plot(grid = True).axhline(y=0, color="black",lw=2)
+    plt.title("Growth of stocks")
+
+def compare_performance_to_market(stocks, start, end):
+    """
+    Compare performance of stocks to the performance of the overall market. SPY
+    represents the SPDR S&p 500 exchange-traded mutual fund, which represents value
+    in the market. Data retrieved from Yahoo! Finance
+
+    :param stocks: The stocks to compare performance to market
+    :param start: The starting date chosen by user
+    :param end: Today
+    :return:
+        spyderdat, a dataframe of the SPY data including open, high, low, and close
+        stock_change, a dataframe of changes in the stocks vs SPY
+    """
+    spyderdat = pd.read_csv("HistoricalQuotes.csv")
+    spyderdat = pd.DataFrame(spyderdat.loc[:, ["open", "high", "low", "close", "close"]].iloc[1:].as_matrix(),
+                             index=pd.DatetimeIndex(spyderdat.iloc[1:, 0]),
+                             columns=["Open", "High", "Low", "Close", "Adj Close"]).sort_index()
+
+    spyder = spyderdat.loc[start:end]
+
+    stocks = stocks.join(spyder.loc[:, "Adj Close"]).rename(columns={"Adj Close": "SPY"})
+    print(stocks.head())
+
+    print("Calculating the rate of return since the beginning of the period of interest compared to SPY...")
+    stock_return = stocks.apply(lambda x: x / x[0])
+    stock_return.plot(grid=True).axhline(y=1, color="black", lw=2)
+    plt.title("Rate of Return since Beginning of Interest Period vs SPY")
+
+    print("Calculating the growth of stocks compared to SPY")
+    stock_change = stocks.apply(lambda x: np.log(x) - np.log(x.shift(1)))
+    stock_change.plot(grid=True).axhline(y=0, color="black", lw=2)
+    plt.title("Growth of Stocks vs SPY")
+
+    return spyderdat, stock_change
+
+def calculate_risk_metrics(stock_change, start, end):
+    """
+    Annualize our returns by computing the annual percentage rate
+    :param stock_change: a dataframe tracking stock changes vs the SPY
+    :param start: The start date specified by user
+    :param end: Today
+    :return:
+        stock_change_apr: the annual percentage rate
+        rrf: The risk free rate of return
+    """
+    stock_change_apr = stock_change * 252 * 100
+    print(stock_change_apr.tail())
+
+    # Get the risk-free rate (rate of return on a risk-free financial asset.
+    print("Getting the risk-free rate of return, calculated by the yields of 3 month US Treasury Bills.")
+    tbill = quandl.get("FRED/TB3MS", start_date=start,end_date=end, authtoken=api_key)
+    print(tbill.tail())
+    tbill.plot()
+    plt.title("Risk Free Rate of Return (Obtained from 3-month US Treasury Bills)")
+
+    # Get the most recent treasury bill rate
+    rrf = tbill.iloc[-1,0]
+    print("Most recent Treasury Bill rate: ")
+    print(rrf)
+
+    return stock_change_apr, rrf
+
+def linear_regression_model(stock_change_apr, rrf, start, end):
+    """
+    Make a linear regression model of the form: y_i = alpha + betax_i
+    How much a stock moves in relation to the market:
+        beta = r(s_y/s_x)
+        If beta > 0, stock generally moves in direction of market,
+        If beta == 1, stock moves strongly in response to the market
+        If |beta| < 1, the stock is less responsive to the market
+    The average excess return over the market: alpha = y - betax
+    The return of a financial asset (R_t) = alpha + beta(R_Mt - r_RF) + e_t + r_RF
+    R_t - r_RF is the excess return (return exceeding risk-free rate of return
+    R_Mt is the return of the market at time t
+    :param stock_change_apr: a dataframe for the annual percentage rate of the chosen stock
+    :param rrf: The risk-free rate of return
+    :param start: The start date
+    :param end: The end date
+    :return: None
+    """
+    # get series that contains how much each stock is correlated with SPY
+    smcorr = stock_change_apr.drop("SPY", 1).corrwith(
+        stock_change_apr.SPY)  # Since RRF is constant it doesn't change
+    print(smcorr)
+
+    sy = stock_change_apr.drop("SPY", 1).std()
+    sx= stock_change_apr.SPY.std()
+
+    ybar = stock_change_apr.drop("SPY",1).mean() - rrf
+    xbar = stock_change_apr.SPY.mean() - rrf
+
+    beta = smcorr * sy / sx
+    alpha = ybar - beta * xbar
+
+    # Calculate Sharpe ratio = (R_t - r_RF)/s where s is the volatility of the stock
+    sharpe = (ybar -rrf) / sy
+    print("Sharpe ratio: ")
+    print(sharpe)
+
 def moving_average_crossover_strategy(days, stk, start_date, end_date):
     """
-    :param days: An array of the day ranges to calculate a moving average from
+    Takes two moving averages, a 'fast' one and a 'slow one and calculates s strategy.
+    Trade the asset when the fast moving average crosses over the slow moving average.
+    Exit the trade when the fast moving average crosses over the slow moving average again.
+
+    :param days: An array of the day ranges to calculate a moving average from. Should have
+        two elements, the fast and slow
     :param stk: The particular stock to examine
     :param start_date: The starting date
     :param end_date: The end date
@@ -34,41 +177,56 @@ def moving_average_crossover_strategy(days, stk, start_date, end_date):
     range = (start_range+"-"+end_range)
     stk[range] = stk[start_range] - stk[end_range]
     print(stk.tail())
+
     stk["Regime"] = np.where(stk[range] > 0,1,0)
+
     # We have 1's for bullish regimes and 0's for everything else
-    #replace bearish regimes's values with -1, and to maintain the rest of the vector,
+    # replace bearish regimes's values with -1, and to maintain the rest of the vector,
     # the second argument is stk["Regime"]
     stk["Regime"] = np.where(stk[range] < 0,-1, stk["Regime"])
     stk.loc[start_date:end_date,"Regime"].plot(ylim=(-2,2)).axhline(y=0, color="black",lw=2)
     print(stk.tail())
-    #stk["Regime"].plot(ylim=(-2, 2)).axhline(y=0, color="black", lw=2)
+
+
+    # stk["Regime"].plot(ylim=(-2, 2)).axhline(y=0, color="black", lw=2)
     count = stk["Regime"].value_counts().tolist()
     print("The market was bearish for " + str(count[0]) + " days.")
     print("The market was bullish for " + str(count[1]) + " days.")
     print("The market was neutral for " + str(count[2]) + " days.")
+
 def get_signals(stk):
     """
-    s_t = sign(r_t - r_(t-1)) where s_t is an element of {-1,0,1} where
-    -1 indicates sell
-    1 indicates buy
-    0 indicates no action
-    :param stk:
-    :return:
+    Obtain the signals of whether to sell or buy, calculated by:
+        s_t = sign(r_t - r_(t-1)) where s_t is an element of {-1,0,1} where
+        -1 indicates sell
+        1 indicates buy
+        0 indicates no action
+    :param stk: The stock to calculate signals for
+    :return: none
     """
     # To ensure that all trades close out, temporarily change the regime of the last row to 0
     regime_orig = stk.loc[:,"Regime"].iloc[-1]
-    stk.loc[:,"Regime"].iloc[-1] = 0
+    stk.loc[:, "Regime"].iloc[-1] = 0
     stk["Signal"] = np.sign(stk["Regime"] - stk["Regime"].shift(1))
+
     # restore data
-    stk.loc[:,"Regime"].iloc[-1] = regime_orig
+    stk.loc[:, "Regime"].iloc[-1] = regime_orig
     print(stk.tail())
+
     #stk["Signal"].plot(ylim=(-2,2))
     count = stk["Signal"].value_counts().tolist()
+
     print("We would buy stock " + str(count[2]) + " times.")
     print("We would sell stock " + str(count[1]) + " times.")
     print("We do nothing " + str(count[0]) + " times.")
     identify_prices_at_close(stk)
+
 def identify_prices_at_close(stk):
+    """
+
+    :param stk:
+    :return:
+    """
     print(stk.loc[stk["Signal"] == 1, "Close"])
     print(stk.loc[stk["Signal"] == -1, "Close"])
     stk_signals = pd.concat([
@@ -82,7 +240,14 @@ def identify_prices_at_close(stk):
     stk_signals.sort_index(inplace = True)
     print(stk_signals)
 #    long_trade_profitability(stk_signals, stk)
+
 def long_trade_profitability(stk_signals, stk):
+    """
+
+    :param stk_signals:
+    :param stk:
+    :return:
+    """
     stk_long_profits = pd.DataFrame({
         "Price": stk_signals.loc[(stk_signals["Signal"] == "Buy") &
                                  stk_signals["Regime"] == 1, "Price"],
@@ -97,7 +262,14 @@ def long_trade_profitability(stk_signals, stk):
     })
     print(stk_long_profits)
     #test_trade_periods(stk_long_profits, stk)
+
 def test_trade_periods(stk_long_profits, stk):
+    """
+
+    :param stk_long_profits:
+    :param stk:
+    :return:
+    """
     tradeperiods = pd.DataFrame({"Start": stk_long_profits.index,
                                  "End": stk_long_profits["End Date"]})
     stk_long_profits["Low"] = tradeperiods.apply(lambda x: min(stk.loc[x["Start"]:x["End"], "Adj. Low"]), axis=1)
@@ -142,20 +314,15 @@ def test_trade_periods(stk_long_profits, stk):
         print(stk_backtest)
         stk_backtest["End Port. Value"].plot()
 
-def rolling_average_n_day(days, date_start, date_end, stk, stock_name):
+def benchmarking(spyderdat, start, end, bk):
     """
-    If the 200 day moving average is trending downward, overall bearish.
-    If upward, bullish market.
-    :param days:
-    :param date_start:
-    :param date_end:
-    :param stk:
+
+    :param spyderdat:
+    :param start:
+    :param end:
+    :param bk:
     :return:
     """
-    for d in days:
-        stk[str(d) + "d"] = np.round(stk["Adj. Close"].rolling(window=int(d), center=False).mean(), 2)
-    pandas_candlestick_ohlc(stk.loc[date_start:date_end, :], stock_name, otherseries=[d + "d" for d in days], adj=True)
-def benchmarking(spyderdat, start, end, bk):
     spyder = spyderdat.loc[start:end]
     batch = 100
     print(spyder.iloc[[0,-1],:])
@@ -167,118 +334,9 @@ def benchmarking(spyderdat, start, end, bk):
     ax_bench = (bk["Portfolio Value"].groupby(level=0).apply(lambda x: x[-1]) / 1000000).plot(ax=ax_bench,                                                                         label="Portfolio")
     ax_bench.legend(ax_bench.get_lines(), [l.get_label() for l in ax_bench.get_lines()], loc='best')
     print(ax_bench)
-
-def calculate_returns(stocks):
-    """
-    Calculate and plot the stock's return since the beginning of the period of interest, defined by
-    return_t,0 = price_t / price_0
-    Calculate the change of each stock per day, where the change is defined by
-    change_t = log(price_t) - log(price_(t-1))
-    :param stocks: The stocks to compare
-    :return:
-    """
-    # stock_return = price_t/price_0
-    stock_return = stocks.apply(lambda x: x / x[0])
-    print(stock_return.head() - 1)
-    stock_return.plot(grid = True).axhline(y=1, color="black",lw=2)
-    plt.title("Return since Beginning of Period of Interest")
-
-    # plot the log difference of the growth of a stock
-    # change_t = log(price_t) - log(price_(t-1))
-    stock_change = stocks.apply(lambda x: np.log(x) - np.log(x.shift(1)))
-    print(stock_change.head())
-    stock_change.plot(grid = True).axhline(y=0, color="black",lw=2)
-    plt.title("Growth of stocks")
-def compare_performance_to_market(stocks, start, end):
-    """
-    Compare performance of stocks to the performance of the overall market. SPY
-    represents the SPDR S&p 500 exchange-traded mutual fund, which represents value
-    in the market. Data retrieved from Yahoo! Finance
-
-    :param stocks: The stocks to compare performance to market
-    :param start: The starting date chosen by user
-    :param end: Today
-    :return:
-        spyderdat, a dataframe of the SPY data including open, high, low, and close
-        stock_change, a dataframe of changes in the stocks vs SPY
-    """
-    spyderdat = pd.read_csv("HistoricalQuotes.csv")
-    spyderdat = pd.DataFrame(spyderdat.loc[:, ["open", "high", "low", "close", "close"]].iloc[1:].as_matrix(),
-                             index=pd.DatetimeIndex(spyderdat.iloc[1:, 0]),
-                             columns=["Open", "High", "Low", "Close", "Adj Close"]).sort_index()
-
-    spyder = spyderdat.loc[start:end]
-
-    stocks = stocks.join(spyder.loc[:, "Adj Close"]).rename(columns={"Adj Close": "SPY"})
-    print(stocks.head())
-    print("Calculating the rate of return since the beginning of the period of interest compared to SPY...")
-    stock_return = stocks.apply(lambda x: x / x[0])
-    stock_return.plot(grid=True).axhline(y=1, color="black", lw=2)
-    plt.title("Rate of Return since Beginning of Interest Period vs SPY")
-    print("Calculating the growth of stocks compared to SPY")
-    stock_change = stocks.apply(lambda x: np.log(x) - np.log(x.shift(1)))
-    stock_change.plot(grid=True).axhline(y=0, color="black", lw=2)
-    plt.title("Growth of Stocks vs SPY")
-    return spyderdat, stock_change
-def calculate_risk_metrics(stock_change, start, end):
-    """
-    Annualize our returns by computing the annual percentage rate
-    :param stock_change: a dataframe tracking stock changes vs the SPY
-    :param start: The start date specified by user
-    :param end: Today
-    :return:
-        stock_change_apr: the annual percentage rate
-        rrf: The risk free rate of return
-    """
-    stock_change_apr = stock_change * 252 * 100
-    print(stock_change_apr.tail())
-    """
-    Get the risk-free rate (rate of return on a risk-free financial asset.
-    """
-    print("Getting the risk-free rate of return, calculated by the yields of 3 month US Treasury Bills.")
-    tbill = quandl.get("FRED/TB3MS", start_date=start,end_date=end, authtoken=api_key)
-    print(tbill.tail())
-    tbill.plot()
-    plt.title("Risk Free Rate of Return (Obtained from 3-month US Treasury Bills)")
-    # get the most recent treasury bill rate
-    rrf = tbill.iloc[-1,0]
-    print("Most recent Treasury Bill rate: ")
-    print(rrf)
-    return stock_change_apr, rrf
-def linear_regression_model(stock_change_apr, rrf, start, end):
-    """
-    Make a linear regression model of the form: y_i = alpha + betax_i
-    How much a stock moves in relation to the market:
-        beta = r(s_y/s_x)
-        If beta > 0, stock generally moves in direction of market,
-        If beta == 1, stock moves strongly in response to the market
-        If |beta| < 1, the stock is less responsive to the market
-    The average excess return over the market: alpha = y - betax
-    The return of a financial asset (R_t) = alpha + beta(R_Mt - r_RF) + e_t + r_RF
-    R_t - r_RF is the excess return (return exceeding risk-free rate of return
-    R_Mt is the return of the market at time t
-    """
-    # get series that contains how much each stock is correlated with SPY
-    smcorr = stock_change_apr.drop("SPY", 1).corrwith(
-        stock_change_apr.SPY)  # Since RRF is constant it doesn't change the
-    print(smcorr)
-    sy = stock_change_apr.drop("SPY", 1).std()
-    sx= stock_change_apr.SPY.std()
-
-    ybar = stock_change_apr.drop("SPY",1).mean() - rrf
-    xbar = stock_change_apr.SPY.mean() - rrf
-
-    beta = smcorr * sy / sx
-    alpha = ybar - beta * xbar
-    """
-    Calculate Shape ratio = (R_t - r_RF)/s where s is the volatility of the stock 
-    """
-    sharpe = (ybar -rrf) / sy
-    print("Sharpe ratio: ")
-    print(sharpe)
-
 """
-Following three functions taken from Source for educational purposes.
+Following three functions taken from Source - some modifications done for
+educational purposes. 
 """
 
 def ma_crossover_orders(stocks, fast, slow):
@@ -501,29 +559,33 @@ def backtest(signals, cash, port_value=.1, batch=100):
     return results
 
 def main():
-
+    """
+    Main function to calculate various trends, strategies, and plot results for stocks.
+    """
     year = int(input("Starting year for statistical analysis: "))
+    input_stock = input("Choose a stock from the list:\nMSFT, GOOG, FB, TWTR, NFLX, AMZN, YHOO, GE, QCOM, IBM, HPQ, AAPL\n").upper()
+    plot = input("Type Y to plot " + input_stock + ". Press enter to skip.")
+
     start = datetime.datetime(year, 1, 1)
     end = datetime.date.today()
     wiki = "WIKI/"
-    input_stock = input("Choose a stock from the list:\nMSFT, GOOG, FB, TWTR, NFLX, AMZN, YHOO, GE, QCOM, IBM, HPQ, AAPL\n")
-    input_stock = input_stock.upper()
     stock = quandl.get(wiki + input_stock, start_date=start,end_date=end, authtoken=api_key)
-
-    plot = input("Type Y to plot " + input_stock + ". Press enter to skip.")
 
     type(stock)
     pd.DataFrame(stock).head()
+    # print the values of the first part of the stock dataframe
     print(stock.head())
+
     # Upon user request, plot the chosen stock's Adj. Close as well as a candlestick plot per month.
     if plot.lower() == "y":
         stock["Adj. Close"].plot(grid = True)
         plt.title("Adj. Close for " + input_stock)
         pandas_candlestick_ohlc(stock, input_stock, adj=True, stick="month")
 
+    # Get some comparison stocks
     print("Getting stocks for Apple, Microsoft, and Google for comparison...")
-    apple, microsoft, google = (quandl.get(wiki+ s, start_date =start, end_date=end, authtoken=api_key) for s in
-                                ["AAPL","MSFT", "GOOG"])
+    apple, microsoft, google = (quandl.get(wiki + s, start_date =start, end_date=end, authtoken=api_key) for s in
+                                ["AAPL", "MSFT", "GOOG"])
     plot = input("Type Y to plot Apple, Microsoft, and Google stocks. Press enter to skip.")
 
     stocks = pd.DataFrame({"AAPL": apple["Adj. Close"],
@@ -531,53 +593,71 @@ def main():
                            "GOOG": google["Adj. Close"],
                            input_stock:stock["Adj. Close"]
                            })
-    head = stocks.head()
-    print(head)
+    # print the first values of the dataframe for all of the stocks.
+    print(stocks.head())
 
+    # if user desires, plot the four stocks
     if plot.lower() == "y":
         stocks.plot(secondary_y = ["AAPL", "MSFT", "GOOG", input_stock], grid = True)
         plt.title("AAPL, MSFT, GOOG, and " + input_stock)
+
+    # Plot rate of return for chosen stock
     plot = input("Type Y to plot rate of return for " + input_stock + ". Press enter to skip.")
     if plot.lower() == "y":
         calculate_returns(stocks)
+
+    # Calculate the performance of the stocks versus the market average
     print("Comparing performance of stocks to performance of overall market using SPY.")
     spyderdat, stock_change = compare_performance_to_market(stocks, start, end)
+
+    # Calculate risk metrics to make a linear regression model
     print("Calculating risk metrics")
     stock_change_apr, rrf = calculate_risk_metrics(stock_change, start, end)
+
+    # Create a linear regression model
     print("Creating a linear regression model")
     linear_regression_model(stock_change_apr, rrf, start, end)
-    """
-    Find trends in stocks with a q-day moving average
-    """
-    print("Calculating a q-day moving average")
-    q_day = input("Enter a value for q. Enter 0 to quit")
+
+    # Find trends in stocks with a n-day moving average
+    print("Calculating a n-day moving average")
+    n_day = input("Enter a value for n. Enter 0 to quit")
     while True:
-        if(not q_day.isdigit()):
+        if not n_day.isdigit():
             print("Sorry, could not understand that input. Enter 0 to quit or try again.")
-            q_day = input("Enter a value for q. Enter 0 to quit")
-        if( int(q_day) == 0):
+            n_day = input("Enter a value for n. Enter 0 to quit")
+        if int(n_day) == 0:
             break
-        rolling_average_n_day([q_day], str(year)+'-01-04', str(year)+'-12-31', stock, input_stock)
-        q_day = input("Enter a value for q. Enter 0 to quit")
-    print("Calculating a 20d moving average since 2010")
+        rolling_average_n_day([n_day], str(year)+'-01-04', str(year)+'-12-31', stock, input_stock)
+        n_day = input("Enter a value for q. Enter 0 to quit")
+
+    # Calculate a 20d moving average to compare
+    print("Calculating a 20d moving average since 2010 for comparison purposes.")
     start = datetime.datetime(2010, 1, 1)
     stock = quandl.get("WIKI/" + input_stock, start_date=start, end_date=end, authtoken=api_key)
     rolling_average_n_day(["20"], str(year) + '-01-04', str(year) + '-12-31', stock, input_stock)
     pandas_candlestick_ohlc(stock.loc[str(year)+'-01-04':str(year)+'-12-31', :],input_stock, otherseries="20d", adj=True)
+
+    # Ask user for a range of moving averages to calculate
     print("Calculate multiple moving averages.")
     q_day_range = input("Enter a list of comma and space separated q_days (Ex: 20, 50, 200). Enter 0 to quit:\n")
     while True:
         split_range = q_day_range.split(", ")
-        if(not split_range[0].isdigit() or int(split_range[0]) == 0):
+        if not split_range[0].isdigit() or int(split_range[0]) == 0:
             break
         rolling_average_n_day(split_range, str(year)+'-01-04', str(year)+'-12-31', stock, input_stock)
         q_day_range = input("Enter a list of comma and space separated q_days (Ex: 20, 50, 200). Enter 0 to quit:\n")
+
+    # Calculate a moving average crossover strategy with fast and slow values chosen by user
     print("Moving average crossover strategy:")
     slow = input("Select a slow moving average of days (Ex: 20):\n")
     fast = input("Select a fast moving average of days (Ex: 50):\n")
     moving_average_crossover_strategy([slow, fast], stock, str(year)+'-01-04', str(year)+'-12-31')
+
+    # Get the signals of when to buy, trade, or sell
+    print("Getting signals for when to buy, trade, or sell.")
     get_signals(stock)
 
+    # test functions commented out below.
     """
     signals = ma_crossover_orders([("AAPL", apple),
                                    ("MSFT", microsoft),
@@ -599,6 +679,5 @@ def main():
     benchmarking(spyderdat, start, end, bk)
                                       """
     plt.show()
-
 
 main()
