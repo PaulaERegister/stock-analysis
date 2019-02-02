@@ -1,240 +1,26 @@
+"""
+A set of functions for statistical stock market graphing and analysis using time series analysis - to
+calculate moving averages, trading strategies using moving averages, formulation of exit strategies,
+and strategy evaluation using backtesting - primarily using quandl, pandas, numpy, and matplotlib.
+Examples generalized from CS5160 Introduction to Data Science at University of Utah.
+Source: https://ntguardian.wordpress.com/2018/07/17/stock-data-analysis-python-v2/
+"""
+
 import quandl
 import datetime
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.dates import DateFormatter, WeekdayLocator,\
-    DayLocator, MONDAY
+from matplotlib.dates import DateFormatter, WeekdayLocator, DayLocator, MONDAY
 import matplotlib.dates as dates
 from mpl_finance import candlestick_ohlc
 
-
-def pandas_candlestick_ohlc(dat, stick="day", adj=False, otherseries=None):
-    """
-    :param dat: pandas DataFrame object with datetime64 index, and float columns "Open", "High", "Low", and "Close", likely created via DataReader from "yahoo"
-    :param stick: A string or number indicating the period of time covered by a single candlestick. Valid string inputs include "day", "week", "month", and "year", ("day" default), and any numeric input indicates the number of trading days included in a period
-    :param adj: A boolean indicating whether to use adjusted prices
-    :param otherseries: An iterable that will be coerced into a list, containing the columns of dat that hold other series to be plotted as lines
-
-    This will show a Japanese candlestick plot for stock data stored in dat, also plotting other series if passed.
-    """
-    mondays = WeekdayLocator(MONDAY)  # major ticks on the mondays
-    alldays = DayLocator()  # minor ticks on the days
-    dayFormatter = DateFormatter('%d')  # e.g., 12
-
-    # Create a new DataFrame which includes OHLC data for each period specified by stick input
-    fields = ["Open", "High", "Low", "Close"]
-    if adj:
-        fields = ["Adj. " + s for s in fields]
-    transdat = dat.loc[:, fields]
-    transdat.columns = pd.Index(["Open", "High", "Low", "Close"])
-    if (type(stick) == str):
-        if stick == "day":
-            plotdat = transdat
-            stick = 1  # Used for plotting
-        elif stick in ["week", "month", "year"]:
-            if stick == "week":
-                transdat["week"] = pd.to_datetime(transdat.index).map(lambda x: x.isocalendar()[1])  # Identify weeks
-            elif stick == "month":
-                transdat["month"] = pd.to_datetime(transdat.index).map(lambda x: x.month)  # Identify months
-            transdat["year"] = pd.to_datetime(transdat.index).map(lambda x: x.isocalendar()[0])  # Identify years
-            grouped = transdat.groupby(list(set(["year", stick])))  # Group by year and other appropriate variable
-            plotdat = pd.DataFrame({"Open": [], "High": [], "Low": [],
-                                    "Close": []})  # Create empty data frame containing what will be plotted
-            for name, group in grouped:
-                plotdat = plotdat.append(pd.DataFrame({"Open": group.iloc[0, 0],
-                                                       "High": max(group.High),
-                                                       "Low": min(group.Low),
-                                                       "Close": group.iloc[-1, 3]},
-                                                      index=[group.index[0]]))
-            if stick == "week":
-                stick = 5
-            elif stick == "month":
-                stick = 30
-            elif stick == "year":
-                stick = 365
-
-    elif (type(stick) == int and stick >= 1):
-        transdat["stick"] = [np.floor(i / stick) for i in range(len(transdat.index))]
-        grouped = transdat.groupby("stick")
-        plotdat = pd.DataFrame(
-            {"Open": [], "High": [], "Low": [], "Close": []})  # Create empty data frame containing what will be plotted
-        for name, group in grouped:
-            plotdat = plotdat.append(pd.DataFrame({"Open": group.iloc[0, 0],
-                                                   "High": max(group.High),
-                                                   "Low": min(group.Low),
-                                                   "Close": group.iloc[-1, 3]},
-                                                  index=[group.index[0]]))
-
-    else:
-        raise ValueError(
-            'Valid inputs to argument "stick" include the strings "day", "week", "month", "year", or a positive integer')
-
-    # Set plot parameters, including the axis object ax used for plotting
-    fig, ax = plt.subplots()
-    fig.subplots_adjust(bottom=0.2)
-    if plotdat.index[-1] - plotdat.index[0] < pd.Timedelta('730 days'):
-        weekFormatter = DateFormatter('%b %d')  # e.g., Jan 12
-        ax.xaxis.set_major_locator(mondays)
-        ax.xaxis.set_minor_locator(alldays)
-    else:
-        weekFormatter = DateFormatter('%b %d, %Y')
-    ax.xaxis.set_major_formatter(weekFormatter)
-
-    ax.grid(True)
-
-    # Create the candelstick chart
-    candlestick_ohlc(ax, list(
-        zip(list(dates.date2num(plotdat.index.tolist())), plotdat["Open"].tolist(), plotdat["High"].tolist(),
-            plotdat["Low"].tolist(), plotdat["Close"].tolist())),
-                     colorup="black", colordown="red", width=stick * .4)
-
-    # Plot other series (such as moving averages) as lines
-    if otherseries != None:
-        if type(otherseries) != list:
-            otherseries = [otherseries]
-        dat.loc[:, otherseries].plot(ax=ax, lw=1.3, grid=True)
-
-    ax.xaxis_date()
-    ax.autoscale_view()
-    plt.setp(plt.gca().get_xticklabels(), rotation=45, horizontalalignment='right')
-
-    plt.show()
+api_key = "itSiso5s5gexytWVr4Aw"
 
 
 
-def main():
-    start = datetime.datetime(2016, 1, 1)
-    end = datetime.date.today()
-    wiki = "WIKI/"
-    s = "AAPL"
-    # Get more stocks
-    (microsoft, google, facebook, twitter, netflix,
-     amazon, yahoo, ge, qualcomm, ibm, hp) = (quandl.get("WIKI/" + s, start_date=start,
-                                                         end_date=end) for s in ["MSFT", "GOOG", "FB", "TWTR",
-                                                                                 "NFLX", "AMZN", "YHOO", "GE",
-                                                                                 "QCOM", "IBM", "HPQ"])
-    apple = quandl.get(wiki + s, start_date=start, end_date=end)
-    type(apple)
-    pd.DataFrame(apple).head()
-    apple.head()
-    plt.rcParams['figure.figsize'] = (15,9)
-    #apple["Adj. Close"].plot(grid = True)
-    #pandas_candlestick_ohlc(apple, adj=True, stick="month")
-    microsoft, google = (quandl.get(wiki+ s, start_date =start, end_date=end) for s in ["MSFT", "GOOG"])
-    stocks = pd.DataFrame({"AAPL": apple["Adj. Close"],
-                           "MSFT": microsoft["Adj. Close"],
-                           "GOOG": google["Adj. Close"]
-                           })
-    head = stocks.head()
-    print(head)
-    #stocks.plot(secondary_y = ["AAPL", "MSFT"], grid = True)
-    # Plot return_t,0 = price_t/price_0
-    stock_return = stocks.apply(lambda x: x/ x[0])
-    stock_return.head() -1
-    #stock_return.plot(grid = True).axhline(y=1, color="black",lw=2)
-    #plot the log difference of the growth of a stock
-    # change_t = log(price_t) - log(price_t-1)
-    stock_change = stocks.apply(lambda x: np.log(x) - np.log(x.shift(1)))
-    stock_change.head()
-    #stock_change.plot(grid = True).axhline(y=0, color="black",lw=2)
 
-    """
-    Compare performance of stocks to the performance of the overall market. SPY 
-    represents the SPDR S&p 500 exchange-traded mutual fund, which represents value
-    in the market. Data retrieved from Yahoo! Finance
-    """
-    spyderdat = pd.read_csv("HistoricalQuotes.csv")
-    spyderdat = pd.DataFrame(spyderdat.loc[:, ["open", "high", "low", "close", "close"]].iloc[1:].as_matrix(),
-                             index=pd.DatetimeIndex(spyderdat.iloc[1:, 0]),
-                             columns=["Open", "High", "Low", "Close", "Adj Close"]).sort_index()
 
-    spyder = spyderdat.loc[start:end]
-
-    stocks = stocks.join(spyder.loc[:, "Adj Close"]).rename(columns={"Adj Close": "SPY"})
-    stocks.head()
-    stock_return = stocks.apply(lambda x: x / x[0])
-    #stock_return.plot(grid=True).axhline(y=1, color="black", lw=2)
-
-    stock_change = stocks.apply(lambda x: np.log(x) - np.log(x.shift(1)))
-    #stock_return.plot(grid=True).axhline(y=0, color="black", lw=2)
-
-    """
-    Annualize our returns by computing the annual percentage rate
-    """
-    stock_change_apr = stock_change * 252 * 100
-    stock_change_apr.tail()
-    """
-    Get the risk-free rate (rate of return on a risk-free financial asset.
-    """
-    tbill = quandl.get("FRED/TB3MS", start_date=start,end_date=end)
-    tbill.tail()
-    #tbill.plot()
-    # get the most recent treasury bill rate
-    rrf = tbill.iloc[-1,0]
-    """
-    Make a linear regression model of the form: y_i = alpha + betax_i
-    How much a stock moves in relation to the market: 
-        beta = r(s_y/s_x)
-        If beta > 0, stock generally moves in direction of market,
-        If beta == 1, stock moves strongly in response to the market
-        If |beta| < 1, the stock is less responsive to the market
-    The average excess return over the market: alpha = y - betax
-    The return of a financial asset (R_t) = alpha + beta(R_Mt - r_RF) + e_t + r_RF
-    R_t - r_RF is the excess return (return exceeding risk-free rate of return
-    R_Mt is the return of the market at time t
-    """
-    # get series that contains how much each stock is correlated with SPY
-    smcorr = stock_change_apr.drop("SPY", 1).corrwith(
-        stock_change_apr.SPY)  # Since RRF is constant it doesn't change the
-    sy = stock_change_apr.drop("SPY", 1).std()
-    sx= stock_change_apr.SPY.std()
-    ybar = stock_change_apr.drop("SPY",1).mean() - rrf
-    xbar = stock_change_apr.SPY.mean() - rrf
-    beta = smcorr * sy / sx
-    alpha = ybar - beta * xbar
-    """
-    Calculate Shape ratio = (R_t - r_RF)/s where s is the volatility of the stock 
-    """
-    sharpe = (ybar -rrf) / sy
-    """
-    Find trends in stocks with a q-day moving average
-    """
-    #rolling_average_n_day(["20"], '2016-01-04', '2016-12-31', apple)
-    start = datetime.datetime(2010, 1, 1)
-    apple = quandl.get("WIKI/AAPL", start_date=start, end_date=end)
-    rolling_average_n_day(["20", "50", "200"], '2016-01-04', '2016-12-31', apple)
-    moving_average_crossover_strategy(["20", "50"], apple, '2016-01-04', '2016-12-31')
-    signals = ma_crossover_orders([("AAPL", apple),
-                                   ("MSFT", microsoft),
-                                   ("GOOG", google),
-                                   ("FB", facebook),
-                                   ("TWTR", twitter),
-                                   ("NFLX", netflix),
-                                   ("AMZN", amazon),
-                                   ("YHOO", yahoo),
-                                   ("GE", ge),
-                                   ("QCOM", qualcomm),
-                                   ("IBM", ibm),
-                                   ("HPQ", hp)],
-                                  fast=20, slow=50)
-    #print(signals)
-    bk = backtest(signals, 1000000)
-    bk["Portfolio Value"].groupby(level=0).apply(lambda x: x[-1]).plot()
-    benchmarking(spyderdat, start, end, bk)
-    plt.show()
-def benchmarking(spyderdat, start, end, bk):
-    spyder = spyderdat.loc[start:end]
-    batch = 100
-    print(spyder.iloc[[0,-1],:])
-    batches = np.ceil(100 * spyder.loc[:, "Adj Close"].iloc[0])  # Maximum number of batches of stocks invested in
-    trade_val = batches * batch * spyder.loc[:,"Adj Close"].iloc[0] # How much money is used to buy SPY
-    final_val = batches * batch * spyder.loc[:,"Adj Close"].iloc[-1] + (1000000 - trade_val) # Final value of the portfolio
-    print(final_val)
-    ax_bench = (spyder["Adj Close"] / spyder.loc[:, "Adj Close"].iloc[0]).plot(label="SPY")
-    ax_bench = (bk["Portfolio Value"].groupby(level=0).apply(lambda x: x[-1]) / 1000000).plot(ax=ax_bench,                                                                         label="Portfolio")
-    ax_bench.legend(ax_bench.get_lines(), [l.get_label() for l in ax_bench.get_lines()], loc='best')
-    print(ax_bench)
 
 
 def moving_average_crossover_strategy(days, stk, start_date, end_date):
@@ -415,7 +201,100 @@ def ma_crossover_orders(stocks, fast, slow):
     trades.index = pd.MultiIndex.from_tuples(trades.index, names=["Date", "Symbol"])
 
     return trades
+def pandas_candlestick_ohlc(dat, stick="day", adj=False, otherseries=None):
+    """
+    :param dat: pandas DataFrame object with datetime64 index, and float columns "Open", "High", "Low", and "Close",
+        likely created via DataReader from "yahoo"
+    :param stick: A string or number indicating the period of time covered by a single candlestick. Valid string inputs
+        include "day", "week", "month", and "year", ("day" default), and any numeric input indicates the number of
+        trading days included in a period
+    :param adj: A boolean indicating whether to use adjusted prices
+    :param otherseries: An iterable that will be coerced into a list, containing the columns of dat that hold other series to be plotted as lines
 
+    This will show a Japanese candlestick plot for stock data stored in dat, also plotting other series if passed.
+    """
+    mondays = WeekdayLocator(MONDAY)  # major ticks on the mondays
+    alldays = DayLocator()  # minor ticks on the days
+    dayFormatter = DateFormatter('%d')  # e.g., 12
+
+    # Create a new DataFrame which includes OHLC data for each period specified by stick input
+    fields = ["Open", "High", "Low", "Close"]
+    if adj:
+        fields = ["Adj. " + s for s in fields]
+    transdat = dat.loc[:, fields]
+    transdat.columns = pd.Index(["Open", "High", "Low", "Close"])
+    if (type(stick) == str):
+        if stick == "day":
+            plotdat = transdat
+            stick = 1  # Used for plotting
+        elif stick in ["week", "month", "year"]:
+            if stick == "week":
+                transdat["week"] = pd.to_datetime(transdat.index).map(lambda x: x.isocalendar()[1])  # Identify weeks
+            elif stick == "month":
+                transdat["month"] = pd.to_datetime(transdat.index).map(lambda x: x.month)  # Identify months
+            transdat["year"] = pd.to_datetime(transdat.index).map(lambda x: x.isocalendar()[0])  # Identify years
+            grouped = transdat.groupby(list(set(["year", stick])))  # Group by year and other appropriate variable
+            plotdat = pd.DataFrame({"Open": [], "High": [], "Low": [],
+                                    "Close": []})  # Create empty data frame containing what will be plotted
+            for name, group in grouped:
+                plotdat = plotdat.append(pd.DataFrame({"Open": group.iloc[0, 0],
+                                                       "High": max(group.High),
+                                                       "Low": min(group.Low),
+                                                       "Close": group.iloc[-1, 3]},
+                                                      index=[group.index[0]]))
+            if stick == "week":
+                stick = 5
+            elif stick == "month":
+                stick = 30
+            elif stick == "year":
+                stick = 365
+
+    elif (type(stick) == int and stick >= 1):
+        transdat["stick"] = [np.floor(i / stick) for i in range(len(transdat.index))]
+        grouped = transdat.groupby("stick")
+        plotdat = pd.DataFrame(
+            {"Open": [], "High": [], "Low": [], "Close": []})  # Create empty data frame containing what will be plotted
+        for name, group in grouped:
+            plotdat = plotdat.append(pd.DataFrame({"Open": group.iloc[0, 0],
+                                                   "High": max(group.High),
+                                                   "Low": min(group.Low),
+                                                   "Close": group.iloc[-1, 3]},
+                                                  index=[group.index[0]]))
+
+    else:
+        raise ValueError(
+            'Valid inputs to argument "stick" include the strings "day", "week", "month", "year", or a positive integer')
+
+    # Set plot parameters, including the axis object ax used for plotting
+    fig, ax = plt.subplots()
+    fig.subplots_adjust(bottom=0.2)
+    if plotdat.index[-1] - plotdat.index[0] < pd.Timedelta('730 days'):
+        weekFormatter = DateFormatter('%b %d')  # e.g., Jan 12
+        ax.xaxis.set_major_locator(mondays)
+        ax.xaxis.set_minor_locator(alldays)
+    else:
+        weekFormatter = DateFormatter('%b %d, %Y')
+    ax.xaxis.set_major_formatter(weekFormatter)
+
+    ax.grid(True)
+
+    # Create the candelstick chart
+    candlestick_ohlc(ax, list(
+        zip(list(dates.date2num(plotdat.index.tolist())), plotdat["Open"].tolist(), plotdat["High"].tolist(),
+            plotdat["Low"].tolist(), plotdat["Close"].tolist())),
+                     colorup="black", colordown="red", width=stick * .4)
+
+    # Plot other series (such as moving averages) as lines
+    if otherseries != None:
+        if type(otherseries) != list:
+            otherseries = [otherseries]
+        dat.loc[:, otherseries].plot(ax=ax, lw=1.3, grid=True)
+
+    ax.xaxis_date()
+    ax.autoscale_view()
+    plt.setp(plt.gca().get_xticklabels(), rotation=45, horizontalalignment='right')
+
+    plt.show()
 
 def backtest(signals, cash, port_value=.1, batch=100):
     """
@@ -493,5 +372,137 @@ def backtest(signals, cash, port_value=.1, batch=100):
 
     return results
 
+def main():
+    start = datetime.datetime(2016, 1, 1)
+    end = datetime.date.today()
+    wiki = "WIKI/"
+    s = "AAPL"
+    # Get more stocks
+    (microsoft, google, facebook, twitter, netflix,
+     amazon, yahoo, ge, qualcomm, ibm, hp) = (quandl.get("WIKI/" + s, start_date=start,
+                                                         end_date=end, authtoken=api_key) for s in ["MSFT", "GOOG", "FB", "TWTR",
+                                                                                 "NFLX", "AMZN", "YHOO", "GE",
+                                                                                 "QCOM", "IBM", "HPQ"])
+    apple = quandl.get(wiki + s, start_date=start, end_date=end)
+    type(apple)
+    pd.DataFrame(apple).head()
+    apple.head()
+    plt.rcParams['figure.figsize'] = (15,9)
+    #apple["Adj. Close"].plot(grid = True)
+    #pandas_candlestick_ohlc(apple, adj=True, stick="month")
+    microsoft, google = (quandl.get(wiki+ s, start_date =start, end_date=end, authtoken=api_key) for s in ["MSFT", "GOOG"])
+    stocks = pd.DataFrame({"AAPL": apple["Adj. Close"],
+                           "MSFT": microsoft["Adj. Close"],
+                           "GOOG": google["Adj. Close"]
+                           })
+    head = stocks.head()
+    print(head)
+    #stocks.plot(secondary_y = ["AAPL", "MSFT"], grid = True)
+    # Plot return_t,0 = price_t/price_0
+    stock_return = stocks.apply(lambda x: x/ x[0])
+    stock_return.head() -1
+    #stock_return.plot(grid = True).axhline(y=1, color="black",lw=2)
+    #plot the log difference of the growth of a stock
+    # change_t = log(price_t) - log(price_t-1)
+    stock_change = stocks.apply(lambda x: np.log(x) - np.log(x.shift(1)))
+    stock_change.head()
+    #stock_change.plot(grid = True).axhline(y=0, color="black",lw=2)
+
+    """
+    Compare performance of stocks to the performance of the overall market. SPY 
+    represents the SPDR S&p 500 exchange-traded mutual fund, which represents value
+    in the market. Data retrieved from Yahoo! Finance
+    """
+    spyderdat = pd.read_csv("HistoricalQuotes.csv")
+    spyderdat = pd.DataFrame(spyderdat.loc[:, ["open", "high", "low", "close", "close"]].iloc[1:].as_matrix(),
+                             index=pd.DatetimeIndex(spyderdat.iloc[1:, 0]),
+                             columns=["Open", "High", "Low", "Close", "Adj Close"]).sort_index()
+
+    spyder = spyderdat.loc[start:end]
+
+    stocks = stocks.join(spyder.loc[:, "Adj Close"]).rename(columns={"Adj Close": "SPY"})
+    stocks.head()
+    stock_return = stocks.apply(lambda x: x / x[0])
+    #stock_return.plot(grid=True).axhline(y=1, color="black", lw=2)
+
+    stock_change = stocks.apply(lambda x: np.log(x) - np.log(x.shift(1)))
+    #stock_return.plot(grid=True).axhline(y=0, color="black", lw=2)
+
+    """
+    Annualize our returns by computing the annual percentage rate
+    """
+    stock_change_apr = stock_change * 252 * 100
+    stock_change_apr.tail()
+    """
+    Get the risk-free rate (rate of return on a risk-free financial asset.
+    """
+    tbill = quandl.get("FRED/TB3MS", start_date=start,end_date=end, authtoken=api_key)
+    tbill.tail()
+    #tbill.plot()
+    # get the most recent treasury bill rate
+    rrf = tbill.iloc[-1,0]
+    """
+    Make a linear regression model of the form: y_i = alpha + betax_i
+    How much a stock moves in relation to the market: 
+        beta = r(s_y/s_x)
+        If beta > 0, stock generally moves in direction of market,
+        If beta == 1, stock moves strongly in response to the market
+        If |beta| < 1, the stock is less responsive to the market
+    The average excess return over the market: alpha = y - betax
+    The return of a financial asset (R_t) = alpha + beta(R_Mt - r_RF) + e_t + r_RF
+    R_t - r_RF is the excess return (return exceeding risk-free rate of return
+    R_Mt is the return of the market at time t
+    """
+    # get series that contains how much each stock is correlated with SPY
+    smcorr = stock_change_apr.drop("SPY", 1).corrwith(
+        stock_change_apr.SPY)  # Since RRF is constant it doesn't change the
+    sy = stock_change_apr.drop("SPY", 1).std()
+    sx= stock_change_apr.SPY.std()
+    ybar = stock_change_apr.drop("SPY",1).mean() - rrf
+    xbar = stock_change_apr.SPY.mean() - rrf
+    beta = smcorr * sy / sx
+    alpha = ybar - beta * xbar
+    """
+    Calculate Shape ratio = (R_t - r_RF)/s where s is the volatility of the stock 
+    """
+    sharpe = (ybar -rrf) / sy
+    """
+    Find trends in stocks with a q-day moving average
+    """
+    #rolling_average_n_day(["20"], '2016-01-04', '2016-12-31', apple)
+    start = datetime.datetime(2010, 1, 1)
+    apple = quandl.get("WIKI/AAPL", start_date=start, end_date=end, authtoken=api_key)
+    rolling_average_n_day(["20", "50", "200"], '2016-01-04', '2016-12-31', apple)
+    moving_average_crossover_strategy(["20", "50"], apple, '2016-01-04', '2016-12-31')
+    signals = ma_crossover_orders([("AAPL", apple),
+                                   ("MSFT", microsoft),
+                                   ("GOOG", google),
+                                   ("FB", facebook),
+                                   ("TWTR", twitter),
+                                   ("NFLX", netflix),
+                                   ("AMZN", amazon),
+                                   ("YHOO", yahoo),
+                                   ("GE", ge),
+                                   ("QCOM", qualcomm),
+                                   ("IBM", ibm),
+                                   ("HPQ", hp)],
+                                  fast=20, slow=50)
+    #print(signals)
+    bk = backtest(signals, 1000000)
+    bk["Portfolio Value"].groupby(level=0).apply(lambda x: x[-1]).plot()
+    benchmarking(spyderdat, start, end, bk)
+    plt.show()
+def benchmarking(spyderdat, start, end, bk):
+    spyder = spyderdat.loc[start:end]
+    batch = 100
+    print(spyder.iloc[[0,-1],:])
+    batches = np.ceil(100 * spyder.loc[:, "Adj Close"].iloc[0])  # Maximum number of batches of stocks invested in
+    trade_val = batches * batch * spyder.loc[:,"Adj Close"].iloc[0] # How much money is used to buy SPY
+    final_val = batches * batch * spyder.loc[:,"Adj Close"].iloc[-1] + (1000000 - trade_val) # Final value of the portfolio
+    print(final_val)
+    ax_bench = (spyder["Adj Close"] / spyder.loc[:, "Adj Close"].iloc[0]).plot(label="SPY")
+    ax_bench = (bk["Portfolio Value"].groupby(level=0).apply(lambda x: x[-1]) / 1000000).plot(ax=ax_bench,                                                                         label="Portfolio")
+    ax_bench.legend(ax_bench.get_lines(), [l.get_label() for l in ax_bench.get_lines()], loc='best')
+    print(ax_bench)
 
 main()
